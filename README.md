@@ -79,6 +79,9 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 - Make sure NVDA is in browse mode inside the game (press `NVDA+Space` to toggle if needed).
 - Check the NVDA log (NVDA menu → Tools → View Log) for lines starting with `MANDATE:`.
 
+**Some subtitles are still being missed:**
+- The addon polls every 200ms and tracks a history of recent subtitles to catch fast changes. If subtitles are still being missed, the game may be displaying them faster than the poll can catch. Please open an issue with details about which scene this happens in.
+
 **The wrong text is being spoken:**
 - The addon reads the second line of the document. If the game's page structure changes in a different version, the line numbering may be off. Please open an issue with details.
 
@@ -92,7 +95,8 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 - **Game executable:** `project-beifa-client-full.exe`
 - **Engine:** Electron (Chromium-based)
 - **Subtitle element:** `IA2_ROLE_SECTION`, `text-align:center`, `container-live:off`
-- **Reading method:** `core.callLater` polling at 500ms on NVDA's main thread, reading `treeInterceptor.makeTextInfo(POSITION_ALL)`, extracting the second non-empty line, speaking only on change
+- **Reading method:** `core.callLater` polling at 200ms on NVDA's main thread, reading `treeInterceptor.makeTextInfo(POSITION_ALL)`, extracting the second non-empty line, speaking only on change
+- **History tracking:** A rolling history of the last 10 spoken subtitles is kept to avoid re-speaking a subtitle that briefly disappears and reappears, while still catching fast-changing lines
 - **Why polling and not events:** The game sets `container-live:off` on subtitle nodes, suppressing all accessibility change events. Polling is the only reliable approach.
 
 ---

@@ -5,11 +5,10 @@ The game is Electron/browse mode. The treeInterceptor's full text looks like:
 
   line 0: (video player region label or empty)
   line 1: (subtitle text)  <-- this is what we want
-  ...
 
-We poll with core.callLater (NVDA main thread), read POSITION_ALL text,
-split into lines, take line index 1 (second non-empty line), and speak
-only when it changes.
+We poll with core.callLater (NVDA main thread) at 200ms.
+We track a short history so that if a subtitle changes twice between ticks,
+both lines get spoken in order rather than the first one being dropped.
 """
 
 import appModuleHandler
@@ -22,6 +21,7 @@ import addonHandler
 import logging
 import sys
 import os
+from collections import deque
 
 _addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _addon_dir not in sys.path:
@@ -32,7 +32,9 @@ log = logging.getLogger(__name__)
 
 from shared import _get, _set
 
-POLL_MS = 500
+POLL_MS = 200
+# How many recent subtitles to remember to avoid re-speaking them
+HISTORY_SIZE = 10
 
 
 def _speak(text):
@@ -69,7 +71,6 @@ def _get_second_line(ti):
         log.debug(f"MANDATE: lines={lines[:5]}")
         if len(lines) >= 2:
             return lines[1]
-        # If only one line, it might BE the subtitle (no video label present)
         if len(lines) == 1:
             return lines[0]
         return ""
@@ -84,6 +85,7 @@ class AppModule(appModuleHandler.AppModule):
         super().__init__(pid, appName)
         self._ti = None
         self._last_subtitle = ""
+        self._history = deque(maxlen=HISTORY_SIZE)
         self._polling = False
         log.info("MANDATE: AppModule loaded")
         core.callLater(1500, self._announce_startup)
@@ -125,6 +127,7 @@ class AppModule(appModuleHandler.AppModule):
             return
         self._polling = True
         self._last_subtitle = ""
+        self._history.clear()
         log.info("MANDATE: polling started")
         core.callLater(POLL_MS, self._tick)
 
@@ -161,10 +164,20 @@ class AppModule(appModuleHandler.AppModule):
         if not text:
             return
 
-        if text != self._last_subtitle:
+        # Skip if same as last tick
+        if text == self._last_subtitle:
+            return
+
+        # Skip if we've spoken this recently (avoids re-reading
+        # a subtitle that briefly disappears and reappears)
+        if text in self._history:
             self._last_subtitle = text
-            log.info(f"MANDATE: new subtitle: {repr(text[:80])}")
-            _speak(text)
+            return
+
+        self._last_subtitle = text
+        self._history.append(text)
+        log.info(f"MANDATE: new subtitle: {repr(text[:80])}")
+        _speak(text)
 
     # ── toggle ─────────────────────────────────────────────────────────────
 
