@@ -22,12 +22,12 @@ The game deliberately disables live region announcements on subtitle elements (`
 
 ## How It Works
 
-The addon uses `core.callLater` to poll on NVDA's own main thread every 500ms. On each tick it reads the full document text from the game's browse mode `treeInterceptor` via `makeTextInfo(POSITION_ALL)`, then splits the result into lines. The document structure is:
+The addon uses `core.callLater` to poll on NVDA's own main thread every 200ms. On each tick it reads the full document text from the game's browse mode `treeInterceptor` via `makeTextInfo(POSITION_ALL)`, then splits the result into lines. The document structure is:
 
 - **Line 1:** the video player region
 - **Line 2:** the English subtitle text
 
-The addon extracts line 2 and speaks it only when it has changed since the last tick. No OCR or screen capture is used — everything is read directly from the accessibility tree.
+The addon extracts line 2 and speaks it only when it has changed since the last tick. A rolling history of the last 10 spoken subtitles is kept so that fast-changing subtitles are not dropped, and so that a subtitle that briefly disappears and reappears is not spoken twice. No OCR or screen capture is used — everything is read directly from the accessibility tree.
 
 ---
 
