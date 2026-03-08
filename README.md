@@ -14,15 +14,20 @@ This addon was created mainly through AI assistance (Claude) by an inexperienced
 
 ## About the Game
 
-[Mandate Of Heaven (江山北望)](https://store.steampowered.com/app/3831120/Mandate_Of_Heaven/) is a Chinese FMV/visual novel RPG built on Electron. NVDA reads it like a web page, with subtitles rendered as centered text nodes inside an HTML5 video player region. The game deliberately disables aria-live on subtitle elements (`container-live:off`), which means NVDA does not automatically announce subtitle changes — hence the need for this addon.
+[Mandate Of Heaven (江山北望)](https://store.steampowered.com/app/3831120/Mandate_Of_Heaven/) is a Chinese FMV/visual novel RPG built on Electron. NVDA reads it like a web page in browse mode, with subtitles rendered as centered text nodes inside an HTML5 video player region.
+
+The game deliberately disables live region announcements on subtitle elements (`container-live:off`), which means NVDA will not automatically announce subtitle changes — and accessibility events like `nameChange` or `textChange` never fire for these nodes. This is why the addon uses polling rather than event hooks.
 
 ---
 
 ## How It Works
 
-The addon hooks into NVDA's `event_treeInterceptor_gainFocus` event, which fires when the game's browse mode document becomes ready. It then listens for accessibility events such as `nameChange`, `textChange`, `reorder`, and `show`. When any of these fire, it reads exactly the second line of the document — the first line is the video player, and the second line is where the English subtitles appear. It only speaks when that line's text has changed.
+The addon uses `core.callLater` to poll on NVDA's own main thread every 500ms. On each tick it reads the full document text from the game's browse mode `treeInterceptor` via `makeTextInfo(POSITION_ALL)`, then splits the result into lines. The document structure is:
 
-No polling, no OCR, and no screen capture is used — the addon reads directly from the accessibility tree, the same way NVDA does when you press the arrow keys manually, and only reacts when something actually changes.
+- **Line 1:** the video player region
+- **Line 2:** the English subtitle text
+
+The addon extracts line 2 and speaks it only when it has changed since the last tick. No OCR or screen capture is used — everything is read directly from the accessibility tree.
 
 ---
 
@@ -45,7 +50,7 @@ No polling, no OCR, and no screen capture is used — the addon reads directly f
 
 ## Usage
 
-Once installed, the addon activates automatically when the game launches. Subtitles will be read aloud by NVDA as they appear on screen.
+Once installed, the addon activates automatically when the game launches. About 1.5 seconds after the game is detected, NVDA will announce that the subtitle reader is active. Subtitles will then be read aloud as they appear on screen.
 
 ### Keyboard Shortcut
 
@@ -70,12 +75,12 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 ## Troubleshooting
 
 **Subtitles are not being read:**
-- Make sure the addon is enabled (NVDA should say "Mandate Of Heaven subtitle reader active" when the game launches).
+- Make sure the addon is enabled (NVDA should say "Mandate Of Heaven subtitle reader active" about 1.5 seconds after the game launches).
 - Make sure NVDA is in browse mode inside the game (press `NVDA+Space` to toggle if needed).
 - Check the NVDA log (NVDA menu → Tools → View Log) for lines starting with `MANDATE:`.
 
-**Too much text is being spoken (UI elements, menus, etc.):**
-- Increase the **Minimum text length** in settings to filter out short items.
+**The wrong text is being spoken:**
+- The addon reads the second line of the document. If the game's page structure changes in a different version, the line numbering may be off. Please open an issue with details.
 
 **Subtitles are being cut off because they change too fast:**
 - Make sure **Interrupt speech** is enabled in settings so new subtitles immediately replace old ones.
@@ -87,7 +92,8 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 - **Game executable:** `project-beifa-client-full.exe`
 - **Engine:** Electron (Chromium-based)
 - **Subtitle element:** `IA2_ROLE_SECTION`, `text-align:center`, `container-live:off`
-- **Reading method:** Event-driven — listens for `nameChange`, `textChange`, `reorder`, and `show` events, then reads the second line of the document via `treeInterceptor.makeTextInfo` only when it changes. No polling.
+- **Reading method:** `core.callLater` polling at 500ms on NVDA's main thread, reading `treeInterceptor.makeTextInfo(POSITION_ALL)`, extracting the second non-empty line, speaking only on change
+- **Why polling and not events:** The game sets `container-live:off` on subtitle nodes, suppressing all accessibility change events. Polling is the only reliable approach.
 
 ---
 
@@ -135,5 +141,4 @@ This addon is licensed under the **GNU General Public License v2** — see [LICE
 ## Acknowledgements
 
 - The [NVDA](https://www.nvaccess.org/) project and NV Access for their incredible screen reader and open source codebase.
-- The developers of [subtitle_reader](https://github.com/maxe-hsieh/subtitle_reader) whose addon provided useful reference.
 - Muyan Studio (木焱工作室) for making Mandate Of Heaven.

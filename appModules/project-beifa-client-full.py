@@ -1,23 +1,22 @@
 """
 NVDA App Module: Mandate Of Heaven Subtitle Reader
 
-Page structure:
-- Line 1: video player
-- Line 2: English subtitles (the only thing we care about)
+The game is Electron/browse mode. The treeInterceptor's full text looks like:
 
-We hook event_treeInterceptor_gainFocus to get the document,
-then use event_liveRegionChange, event_nameChange and event_textChange
-on the second line's object. Since container-live is off, we also
-watch the treeInterceptor's caret/text change events.
+  line 0: (video player region label or empty)
+  line 1: (subtitle text)  <-- this is what we want
+  ...
 
-Actually: we use a virtualBuffer textInfo to find the second line object,
-then watch it for changes via NVDA's object event system.
+We poll with core.callLater (NVDA main thread), read POSITION_ALL text,
+split into lines, take line index 1 (second non-empty line), and speak
+only when it changes.
 """
 
 import appModuleHandler
 import api
 import speech
 import ui
+import core
 import textInfos
 import addonHandler
 import logging
@@ -32,6 +31,8 @@ addonHandler.initTranslation()
 log = logging.getLogger(__name__)
 
 from shared import _get, _set
+
+POLL_MS = 500
 
 
 def _speak(text):
@@ -52,23 +53,28 @@ def _speak(text):
             pass
 
 
-def _get_second_line_text(ti):
+def _get_second_line(ti):
     """
-    Read the second line from the treeInterceptor document.
-    Line 1 = video player, Line 2 = subtitle text.
-    Returns the text of line 2, or empty string.
+    Read the full document text from the treeInterceptor,
+    split into non-empty lines, and return line index 1 (the second line).
+    Line 0 = video player label/region. Line 1 = subtitle text.
+    Returns empty string if unavailable.
     """
     try:
-        info = ti.makeTextInfo(textInfos.POSITION_FIRST)
-        # Move to end of line 1
-        info.expand(textInfos.UNIT_LINE)
-        info.collapse(end=True)
-        # Now expand to get line 2
-        info.expand(textInfos.UNIT_LINE)
-        text = info.text.strip()
-        return text
+        info = ti.makeTextInfo(textInfos.POSITION_ALL)
+        text = info.text
+        if not text:
+            return ""
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        log.debug(f"MANDATE: lines={lines[:5]}")
+        if len(lines) >= 2:
+            return lines[1]
+        # If only one line, it might BE the subtitle (no video label present)
+        if len(lines) == 1:
+            return lines[0]
+        return ""
     except Exception as e:
-        log.debug(f"MANDATE: _get_second_line_text error: {e}")
+        log.debug(f"MANDATE: _get_second_line error: {e}")
         return ""
 
 
@@ -78,82 +84,99 @@ class AppModule(appModuleHandler.AppModule):
         super().__init__(pid, appName)
         self._ti = None
         self._last_subtitle = ""
-        appModuleHandler._mandateMonitor = self
+        self._polling = False
         log.info("MANDATE: AppModule loaded")
+        core.callLater(1500, self._announce_startup)
+
+    def _announce_startup(self):
         ui.message("Mandate Of Heaven subtitle reader active. NVDA+Shift+M to toggle.")
+        if _get("enabled"):
+            self._start_polling()
 
     def terminate(self):
+        self._polling = False
         self._ti = None
-        appModuleHandler._mandateMonitor = None
         log.info("MANDATE: AppModule terminated")
         super().terminate()
 
-    def event_treeInterceptor_gainFocus(self, obj, nextHandler):
-        try:
-            ti = obj.treeInterceptor
-            if ti is not None:
-                self._ti = ti
-                log.info("MANDATE: treeInterceptor ready")
-        except Exception:
-            pass
-        nextHandler()
+    # ── treeInterceptor capture ────────────────────────────────────────────
 
-    def event_gainFocus(self, obj, nextHandler):
+    def _try_capture_ti(self, obj):
         try:
             ti = getattr(obj, 'treeInterceptor', None)
             if ti is not None and ti is not self._ti:
                 self._ti = ti
-                log.info("MANDATE: treeInterceptor captured via gainFocus")
+                log.info(f"MANDATE: treeInterceptor captured: {ti}")
         except Exception:
             pass
+
+    def event_treeInterceptor_gainFocus(self, obj, nextHandler):
+        self._try_capture_ti(obj)
         nextHandler()
 
-    def event_liveRegionChange(self, obj, nextHandler):
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
+    def event_gainFocus(self, obj, nextHandler):
+        self._try_capture_ti(obj)
         nextHandler()
 
-    def event_nameChange(self, obj, nextHandler):
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
-        nextHandler()
+    # ── polling ────────────────────────────────────────────────────────────
 
-    def event_valueChange(self, obj, nextHandler):
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
-        nextHandler()
+    def _start_polling(self):
+        if self._polling:
+            return
+        self._polling = True
+        self._last_subtitle = ""
+        log.info("MANDATE: polling started")
+        core.callLater(POLL_MS, self._tick)
 
-    def event_textChange(self, obj, nextHandler):
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
-        nextHandler()
+    def _stop_polling(self):
+        self._polling = False
+        log.info("MANDATE: polling stopped")
 
-    def event_reorder(self, obj, nextHandler):
-        """Fires when child nodes are added/removed — common for subtitle updates."""
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
-        nextHandler()
-
-    def event_show(self, obj, nextHandler):
-        """Fires when a new element becomes visible."""
-        if _get("enabled") and self._ti is not None:
-            self._check_subtitle()
-        nextHandler()
-
-    def _check_subtitle(self):
+    def _tick(self):
+        if not self._polling:
+            return
         try:
-            text = _get_second_line_text(self._ti)
-            if text and text != self._last_subtitle:
-                self._last_subtitle = text
-                log.info(f"MANDATE: new subtitle: {repr(text[:80])}")
-                _speak(text)
+            self._do_tick()
         except Exception:
-            log.exception("MANDATE: _check_subtitle error")
+            log.exception("MANDATE: tick error")
+        core.callLater(POLL_MS, self._tick)
+
+    def _do_tick(self):
+        if not _get("enabled"):
+            return
+
+        # Refresh treeInterceptor from current focus if we don't have one
+        if self._ti is None:
+            try:
+                focus = api.getFocusObject()
+                if focus and focus.appModule is self:
+                    self._try_capture_ti(focus)
+            except Exception:
+                pass
+
+        if self._ti is None:
+            return
+
+        text = _get_second_line(self._ti)
+        if not text:
+            return
+
+        if text != self._last_subtitle:
+            self._last_subtitle = text
+            log.info(f"MANDATE: new subtitle: {repr(text[:80])}")
+            _speak(text)
+
+    # ── toggle ─────────────────────────────────────────────────────────────
 
     def script_toggle(self, gesture):
         enabled = not _get("enabled")
         _set("enabled", enabled)
-        ui.message("Subtitle reader enabled." if enabled else "Subtitle reader disabled.")
+        if enabled:
+            self._start_polling()
+            ui.message("Subtitle reader enabled.")
+        else:
+            self._stop_polling()
+            ui.message("Subtitle reader disabled.")
 
     __gestures = {
         "kb:NVDA+shift+m": "toggle",
