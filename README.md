@@ -31,7 +31,7 @@ No OCR or screen capture is used — the addon reads directly from the accessibi
 1. Download the latest `.nvda-addon` file from the [Releases](../../releases) page.
 2. Double-click the file.
 3. NVDA will ask if you want to install it — press Enter on **Yes**.
-4. NVDA will say that add-ons have changed and it will ask to restart, press **yes**.
+4. NVDA will restart automatically.
 
 ---
 
