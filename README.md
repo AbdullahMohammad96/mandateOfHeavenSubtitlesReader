@@ -20,9 +20,9 @@ This addon was created mainly through AI assistance (Claude) by an inexperienced
 
 ## How It Works
 
-The addon hooks into NVDA's `event_treeInterceptor_gainFocus` event, which fires when the game's browse mode document becomes ready. It then polls the accessibility tree via `treeInterceptor.makeTextInfo(POSITION_ALL)` to read all visible text, and speaks any lines that are new since the last poll.
+The addon hooks into NVDA's `event_treeInterceptor_gainFocus` event, which fires when the game's browse mode document becomes ready. It then listens for accessibility events such as `nameChange`, `textChange`, `reorder`, and `show`. When any of these fire, it reads exactly the second line of the document — the first line is the video player, and the second line is where the English subtitles appear. It only speaks when that line's text has changed.
 
-No OCR or screen capture is used — the addon reads directly from the accessibility tree, the same way NVDA does when you press the arrow keys manually.
+No polling, no OCR, and no screen capture is used — the addon reads directly from the accessibility tree, the same way NVDA does when you press the arrow keys manually, and only reacts when something actually changes.
 
 ---
 
@@ -31,7 +31,7 @@ No OCR or screen capture is used — the addon reads directly from the accessibi
 1. Download the latest `.nvda-addon` file from the [Releases](../../releases) page.
 2. Double-click the file.
 3. NVDA will ask if you want to install it — press Enter on **Yes**.
-4. NVDA will restart automatically.
+4. NVDA will then ask if you want to restart now — press Enter on **Yes** to apply the addon.
 
 ---
 
@@ -63,7 +63,6 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 |---|---|
 | Enable automatic subtitle reading | Turn the addon on or off |
 | Interrupt speech for new subtitles | If checked, new subtitles immediately interrupt whatever NVDA is currently saying |
-| Poll interval (ms) | How often the addon checks for new subtitles. Lower = more responsive but more CPU. Default: 500ms |
 | Minimum text length | Ignore any text shorter than this. Helps filter out stray UI elements. Default: 3 |
 
 ---
@@ -77,11 +76,9 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 
 **Too much text is being spoken (UI elements, menus, etc.):**
 - Increase the **Minimum text length** in settings to filter out short items.
-- Try increasing the poll interval slightly.
 
 **Subtitles are being cut off because they change too fast:**
-- Reduce the **Poll interval** in settings to e.g. 200ms.
-- Make sure **Interrupt speech** is enabled so new subtitles don't queue behind old ones.
+- Make sure **Interrupt speech** is enabled in settings so new subtitles immediately replace old ones.
 
 ---
 
@@ -90,7 +87,7 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 - **Game executable:** `project-beifa-client-full.exe`
 - **Engine:** Electron (Chromium-based)
 - **Subtitle element:** `IA2_ROLE_SECTION`, `text-align:center`, `container-live:off`
-- **Reading method:** `treeInterceptor.makeTextInfo(POSITION_ALL)` polled on a background thread after `event_treeInterceptor_gainFocus`
+- **Reading method:** Event-driven — listens for `nameChange`, `textChange`, `reorder`, and `show` events, then reads the second line of the document via `treeInterceptor.makeTextInfo` only when it changes. No polling.
 
 ---
 
