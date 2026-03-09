@@ -1,6 +1,6 @@
 """
 Global Plugin: Mandate Of Heaven Subtitle Reader
-Registers the settings panel permanently in NVDA's Settings dialog.
+Registers the settings panel in NVDA's Settings dialog.
 """
 
 import globalPluginHandler
@@ -8,7 +8,6 @@ import gui
 import sys
 import os
 
-# Add the addon root to sys.path so 'shared' can be imported
 _addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _addon_dir not in sys.path:
     sys.path.insert(0, _addon_dir)

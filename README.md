@@ -14,20 +14,23 @@ This addon was created mainly through AI assistance (Claude) by an inexperienced
 
 ## About the Game
 
-[Mandate Of Heaven (江山北望)](https://store.steampowered.com/app/3831120/Mandate_Of_Heaven/) is a Chinese FMV/visual novel RPG built on Electron. NVDA reads it like a web page in browse mode, with subtitles rendered as centered text nodes inside an HTML5 video player region.
+[Mandate Of Heaven (江山北望)](https://store.steampowered.com/app/3831120/Mandate_Of_Heaven/) is a live-action FMV interactive film-game developed by the independent Chinese studio 木焱工作室 (Muyan Studio), released on Steam in November 2025.
 
-The game deliberately disables live region announcements on subtitle elements (`container-live:off`), which means NVDA will not automatically announce subtitle changes — and accessibility events like `nameChange` or `textChange` never fire for these nodes. This is why the addon uses polling rather than event hooks.
+You play as the Second Prince of the Xuan Kingdom — a southern regime clinging to half its realm after northern invaders have seized the capital and taken the royal family captive. The Tianhe river divides a fractured world: to the south, indulgence and uneasy peace; to the north, bones and unending war. As prince, you must decide whether to launch a Northern Campaign to reclaim the lost homeland, navigate the treacherous politics of a complacent imperial court, forge alliances, uncover betrayals, and ultimately write your own chapter of this grand imperial epic. Every choice you make plays out in real-time through cinematic live-action footage — the story branches dramatically depending on your decisions, with multiple endings.
+
+The game is built on Electron (Chromium) and NVDA reads it in browse mode. Subtitles are rendered as static text nodes inside an HTML5 video player region in the accessibility tree.
 
 ---
 
 ## How It Works
 
-The addon uses `core.callLater` to poll on NVDA's own main thread every 200ms. On each tick it reads the full document text from the game's browse mode `treeInterceptor` via `makeTextInfo(POSITION_ALL)`, then splits the result into lines. The document structure is:
+The addon uses `core.callLater` to poll on NVDA's main thread every 50ms. Each tick works as follows:
 
-- **Line 1:** the video player region
-- **Line 2:** the English subtitle text
+1. **Video player check:** The accessibility tree is scanned for a node with role=151 and name "Video Player". If none is found, the tick returns immediately — zero overhead when you are in menus or dialogue screens.
+2. **Subtitle search:** If a video is playing, the tree is walked looking for **STATICTEXT nodes (role=7)** whose text does not contain CJK (Chinese/Japanese/Korean) characters. These are the subtitle text nodes.
+3. **Speak on change:** The longest matching candidate is taken as the current subtitle. It is spoken only when it differs from the last spoken text. A blank gap between cues resets the state so the same subtitle can be re-spoken if it appears again.
 
-The addon extracts line 2 and speaks it only when it has changed since the last tick. A rolling history of the last 10 spoken subtitles is kept so that fast-changing subtitles are not dropped, and so that a subtitle that briefly disappears and reappears is not spoken twice. No OCR or screen capture is used — everything is read directly from the accessibility tree.
+No OCR, screen capture, or virtual buffer text extraction is used — everything is read directly from IAccessible2 node names, which are always live regardless of whether NVDA's virtual buffer has finished loading.
 
 ---
 
@@ -94,10 +97,13 @@ Go to **NVDA menu → Preferences → Settings → Mandate Of Heaven Subtitles**
 
 - **Game executable:** `project-beifa-client-full.exe`
 - **Engine:** Electron (Chromium-based)
-- **Subtitle element:** `IA2_ROLE_SECTION`, `text-align:center`, `container-live:off`
-- **Reading method:** `core.callLater` polling at 200ms on NVDA's main thread, reading `treeInterceptor.makeTextInfo(POSITION_ALL)`, extracting the second non-empty line, speaking only on change
-- **History tracking:** A rolling history of the last 10 spoken subtitles is kept to avoid re-speaking a subtitle that briefly disappears and reappears, while still catching fast-changing lines
+- **Subtitle node:** role=7 (STATICTEXT), English text, short length
+- **Video player node:** role=151, name="Video Player"
+- **Reading method:** `core.callLater` polling at 50ms, walking IAccessible2 node tree directly, reading `.name` from leaf STATICTEXT nodes, speaking only on change
+- **CJK filter:** Nodes containing Chinese/Japanese/Korean characters are skipped — these are UI labels, not subtitles
+- **Idle behaviour:** If no Video Player node is present in the tree, each tick returns immediately without a full tree walk
 - **Why polling and not events:** The game sets `container-live:off` on subtitle nodes, suppressing all accessibility change events. Polling is the only reliable approach.
+- **Why not virtual buffer:** NVDA's virtual buffer cache is stale during scene transitions. Reading `.name` directly from IAccessible2 nodes bypasses the cache and is always current.
 
 ---
 
